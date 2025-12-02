@@ -65,7 +65,7 @@ def fft_convolve_1d(vec1, vec2) -> np.ndarray:
 def extract_boundary_pixels(input_img):
     # 1. 处理输入：若为路径则打开图片，若为Image对象则直接使用
     if isinstance(input_img, str):
-        with Image.open(input_img) as img:
+        with get_l_image(input_img) as img:
             gray_img = img.convert("L")  # 转为单通道灰度图（0-255）
     elif isinstance(input_img, Image.Image):
         gray_img = input_img.convert("L")  # 确保转为L模式，兼容彩色/灰度输入
@@ -82,8 +82,8 @@ def extract_boundary_pixels(input_img):
     # 4. 定义8邻域的偏移量
     neighbors = [
         (dy, dx) 
-        for dy in range(-1, 2)  # dy: -2, -1, 0, 1, 2（行方向偏移）
-        for dx in range(-1, 2)  # dx: -2, -1, 0, 1, 2（列方向偏移）
+        for dy in range(-2, 3)  # dy: -2, -1, 0, 1, 2（行方向偏移）
+        for dx in range(-2, 3)  # dx: -2, -1, 0, 1, 2（列方向偏移）
         if not (dy == 0 and dx == 0)  # 排除中心像素
     ]
     
@@ -149,16 +149,31 @@ def invert_color_pillow(point_img):
 DIRNOW = os.path.dirname(os.path.abspath(__file__))
 os.chdir(DIRNOW)
 
+__global_obj_image_cache = {}
+
+# 获取一个图片
+def get_l_image(path_or_img:Image.Image|str):
+    if isinstance(path_or_img, str):
+        # 避免多次重读
+        if __global_obj_image_cache.get(path_or_img) is None:
+            __global_obj_image_cache[path_or_img] = Image.open(path_or_img).convert("L")
+        return __global_obj_image_cache[path_or_img]
+    
+    elif isinstance(path_or_img, Image.Image):
+        return path_or_img.convert("L")
+
+    else:
+        assert False
+
 def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MATCH_CNT=1):
     assert MAX_MATCH_CNT >= 1
 
     # 完整图片的 size
-    full_image_rgba = Image.open(FULL_IMAGE_INPUT).convert("RGBA")
-    full_size = full_image_rgba.size
+    full_size = get_l_image(FULL_IMAGE_INPUT).size
 
     # 完整图片的 numpy 对象
     timer.begin_timer("image to numpy: full image")
-    raw_image = Image.open(FULL_IMAGE_INPUT).convert("L")
+    raw_image = get_l_image(FULL_IMAGE_INPUT)
     if INVERT_COLOR:
         raw_image = invert_color_pillow(raw_image)
     full_image_np = (np.array(raw_image) / 256).astype(np.float64)
@@ -166,7 +181,7 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
 
     # 构建和完整图片相同尺寸
     timer.begin_timer("image to numpy: patch image")
-    raw_image = Image.open(IMAGE_PART_INPUT).convert("L")
+    raw_image = get_l_image(IMAGE_PART_INPUT)
     if INVERT_COLOR:
         raw_image = invert_color_pillow(raw_image)
     part_image = raw_image
@@ -230,8 +245,8 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
 
     # score 描述了当前匹配位置的优越程度，score 越低匹配越优秀
     score = 0
-    full_image   = Image.open(FULL_IMAGE_INPUT).convert("L")
-    part_image   = Image.open(IMAGE_PART_INPUT).convert("L")
+    full_image   = get_l_image(FULL_IMAGE_INPUT)
+    part_image   = get_l_image(IMAGE_PART_INPUT)
     border_image = extract_boundary_pixels(part_image).convert("L")
     cnt = 0
     for i in range(part_image.width):
@@ -251,16 +266,30 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
     timer.end_timer("$find_match_pos")
     return posX, posY, score / cnt
 
+def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
+
+    # 记录当前解（旋转角度）
+    rotate_now = 0.0
+    posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
+
+    # 记录最优解
+    rotate_best = rotate_now
+    posX_best, posY_best, score_best = posX_now, posY_now, score_now
+
+    
+
+
+
 # 注意
 #   黑色像素是被匹配的实体像素
 #   白色像素是空白背景像素
 FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
-IMAGE_PART_INPUT = "all_data/data1/image_part1.jpg"
+IMAGE_PART_INPUT = "all_data/data1/image_part8.jpg"
 posY, posX, score = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 print(score)
 
 # 红色的掩码图像
-red_mask = black_to_red_transparent(Image.open(IMAGE_PART_INPUT).convert("L"))
-ans_image = Image.open(FULL_IMAGE_INPUT).convert("RGBA").copy()
+red_mask = black_to_red_transparent(get_l_image(IMAGE_PART_INPUT))
+ans_image = get_l_image(FULL_IMAGE_INPUT).convert("RGBA").copy()
 ans_image.paste(red_mask, (posY, posX), mask=red_mask)
 ans_image.show()
