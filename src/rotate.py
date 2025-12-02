@@ -119,9 +119,9 @@ if __name__ == "__main__":
     os.chdir(DIRNOW)
 
     # 请根据你的需求修改这3个参数
-    INPUT_IMAGE_PATH = "all_data/data1/image_part1.jpg"    # 输入图片路径（支持jpg、png、bmp等格式）
-    OUTPUT_IMAGE_PATH = "all_data/data1/image_part8.jpg"  # 输出图片路径（建议用png格式，避免压缩失真）
-    ROTATE_ANGLE = 8               # 逆时针旋转角度（例如：30、45、90、120.5等）
+    INPUT_IMAGE_PATH = "all_data/data1/image_part3.jpg"    # 输入图片路径（支持jpg、png、bmp等格式）
+    OUTPUT_IMAGE_PATH = "all_data/data1/image_part9.jpg"  # 输出图片路径（建议用png格式，避免压缩失真）
+    ROTATE_ANGLE = 185.4               # 逆时针旋转角度（例如：30、45、90、120.5等）
 
     # 执行处理
     img = rotate_and_crop_white_borders(INPUT_IMAGE_PATH, OUTPUT_IMAGE_PATH, ROTATE_ANGLE)

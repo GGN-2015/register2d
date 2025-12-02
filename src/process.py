@@ -314,7 +314,7 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 #   黑色像素是被匹配的实体像素
 #   白色像素是空白背景像素
 FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
-IMAGE_PART_INPUT = "all_data/data1/image_part8.jpg"
+IMAGE_PART_INPUT = "all_data/data1/image_part9.jpg"
 posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 print(score)
 
