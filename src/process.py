@@ -251,15 +251,19 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
     cnt = 0
     for i in range(part_image.width):
         for j in range(part_image.height):
+            if 0 <= posX + i < full_image.width and 0 <= posY + j < full_image.height:
+                pixel = full_image.getpixel((posX + i, posY + j))
+            else:
+                pixel = 255 # 出界
 
             # 边界惩罚
             if border_image.getpixel((i, j)) > 128:
-                if full_image.getpixel((posX + i, posY + j)) < 128: # 不在外表
+                if pixel < 128: # 不在外表
                     score += (PATTERN_VAL - 1) ** 2
             
             # 内部惩罚
             if part_image.getpixel((i, j)) < 128:
-                if full_image.getpixel((posX + i, posY + j)) > 128: # 在外面
+                if pixel > 128: # 在外面
                     score += PATTERN_VAL * (PATTERN_VAL - 1) ** 2
                 cnt += 1 # 统计内部点
     
@@ -268,43 +272,70 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
 
 import random
 import rotate
+import math
 def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 
     # 记录当前解（旋转角度）
+    timer.ban_all_timer()
     rotate_now = 0.0
     posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
+    timer.allow_all_timer()
 
     # 记录最优解
     rotate_best = rotate_now
     posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
+    # 统一角度范围
+    def angle_range(x:float) -> float:
+        while x >= 360:
+            x -= 360
+        while x < 0:
+            x += 360
+        return x
+
     # 记录当前温度
     temperature = 90.0
+    iter_cnt = 0
     while temperature > 1.0:
-        rotate_next = rotate_now + (random.random() * 2 - 1) * temperature
-        img = rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, rotate_next)
+        iter_cnt += 1
+
+        rotate_next = angle_range(rotate_now + (random.random() * 2 - 1) * temperature)
+        img = rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_next)
+
+        # 设置计时器
+        timer.ban_all_timer()
         posX_next, posY_next, score_next = find_match_pos(FULL_IMAGE_INPUT, img)
+        timer.allow_all_timer()
 
         # 记录最优解
-        if score_now < rotate_best:
-            posX_now, posY_now, score_now = posX_next, posY_next, score_next
-            posX_best, posY_best, score_best = posX_now, posY_now, score_now
+        if score_next < score_best:
+            posX_best, posY_best, score_best, rotate_best = posX_next, posY_next, score_next, rotate_next
+
+        # 遇到比当前解优秀的解
+        if score_next < score_now:
+            posX_now, posY_now, score_now, rotate_now = posX_next, posY_next, score_next, rotate_next
 
         else:
-            assert False # 没实现完成
+            # 以一定概率接受比较差的解
+            rate = math.exp(-abs(score_next - score_now)/((1/90)*temperature))
+            if random.random() < rate:
+                posX_now, posY_now, score_now, rotate_now = posX_next, posY_next, score_next, rotate_next
+
+        print(f"iter:{iter_cnt:5d}, rotate_now:{rotate_now:7.3f}, temperature:{temperature:.3f}, score_now:{score_now:.3f}, score_best:{score_best:.3f}")
         temperature *= 0.95
     
-    return posX_best, posY_best, score_best
+    return posX_best, posY_best, score_best, rotate_best
 # 注意
 #   黑色像素是被匹配的实体像素
 #   白色像素是空白背景像素
 FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
 IMAGE_PART_INPUT = "all_data/data1/image_part8.jpg"
-posY, posX, score = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
+posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 print(score)
 
 # 红色的掩码图像
-red_mask = black_to_red_transparent(get_l_image(IMAGE_PART_INPUT))
+red_mask = black_to_red_transparent(
+    rotate.rotate_and_crop_white_borders(get_l_image(IMAGE_PART_INPUT), None, rot_deg))
 ans_image = get_l_image(FULL_IMAGE_INPUT).convert("RGBA").copy()
 ans_image.paste(red_mask, (posY, posX), mask=red_mask)
 ans_image.show()
