@@ -1,13 +1,13 @@
 from PIL import Image
 import numpy as np
 
-def rotate_and_crop_white_borders(input_path, output_path, rotate_angle, tolerance=10, anti_alias=True):
+def rotate_and_crop_white_borders(input_path, output_path, rotate_angle, tolerance=10, anti_alias=True, disp=False):
     """
     对图片进行逆时针旋转（兼容型抗锯齿）并裁剪白色边框（支持接近白色像素判定）
 
     参数:
         input_path (str): 输入图片的路径（如"input.jpg"）
-        output_path (str): 输出图片的保存路径（如"output.png"）
+        output_path (str|None): 输出图片的保存路径（如"output.png"）
         rotate_angle (int/float): 逆时针旋转的角度（支持任意角度，如30、45.5）
         tolerance (int): 白色容差值（0-255），默认10。值越大，越多接近白色的像素会被视为白色
         anti_alias (bool): 是否开启抗锯齿，默认True（开启）
@@ -19,7 +19,9 @@ def rotate_and_crop_white_borders(input_path, output_path, rotate_angle, toleran
 
         # 1. 读取图片（保持原图通道，支持彩色/灰度图）
         img = Image.open(input_path)
-        print(f"成功读取图片：{input_path}，图片尺寸：{img.size}")
+
+        if disp:
+            print(f"成功读取图片：{input_path}，图片尺寸：{img.size}")
 
         # 2. 配置旋转参数（核心：兼容型抗锯齿配置）
         rotate_kwargs = {
@@ -36,18 +38,23 @@ def rotate_and_crop_white_borders(input_path, output_path, rotate_angle, toleran
             else:
                 # Pillow 旧版本：使用Image.BICUBIC
                 rotate_kwargs["resample"] = Image.BICUBIC
-            print("已开启抗锯齿（使用BICUBIC算法，兼容旋转场景）")
+
+            if disp:
+                print("已开启抗锯齿（使用BICUBIC算法，兼容旋转场景）")
         else:
             # 关闭抗锯齿时使用最基础的NEAREST算法
             if hasattr(Image, "Resampling"):
                 rotate_kwargs["resample"] = Image.Resampling.NEAREST
             else:
                 rotate_kwargs["resample"] = Image.NEAREST
-            print("未开启抗锯齿")
+
+            if disp:
+                print("未开启抗锯齿")
 
         # 执行逆时针旋转
         rotated_img = img.rotate(**rotate_kwargs)
-        print(f"旋转完成（{rotate_angle}度），旋转后尺寸：{rotated_img.size}")
+        if disp:
+            print(f"旋转完成（{rotate_angle}度），旋转后尺寸：{rotated_img.size}")
 
         # 3. 自动裁剪白色边框（保留容差逻辑）
         img_array = np.array(rotated_img)
@@ -74,19 +81,30 @@ def rotate_and_crop_white_borders(input_path, output_path, rotate_angle, toleran
 
         # 4. 裁剪图片
         cropped_img = rotated_img.crop((left, top, right + 1, bottom + 1))
-        print(f"裁剪完成（容差值：{tolerance}），裁剪后尺寸：{cropped_img.size}")
+        if disp:
+            print(f"裁剪完成（容差值：{tolerance}），裁剪后尺寸：{cropped_img.size}")
 
         # 5. 保存结果（PNG格式默认无损，推荐使用）
-        cropped_img.save(output_path)
-        print(f"图片已保存到：{output_path}")
+        if output_path is not None:
+            cropped_img.save(output_path)
+            if disp:
+                print(f"图片已保存到：{output_path}")
+        
+        # 有返回值
+        return cropped_img
 
     except FileNotFoundError:
         print(f"错误：找不到输入图片文件 -> {input_path}")
+        return None
+    
     except ValueError as ve:
         print(f"参数错误：{str(ve)}")
+        return None
+    
     except Exception as e:
         print(f"处理失败：{str(e)}，Pillow版本：{Image.__version__}")
-        
+        return None
+
 # ------------------- 测试示例（修改以下参数即可使用）-------------------
 if __name__ == "__main__":
     import os
@@ -99,4 +117,5 @@ if __name__ == "__main__":
     ROTATE_ANGLE = 34.5               # 逆时针旋转角度（例如：30、45、90、120.5等）
 
     # 执行处理
-    rotate_and_crop_white_borders(INPUT_IMAGE_PATH, OUTPUT_IMAGE_PATH, ROTATE_ANGLE)
+    img = rotate_and_crop_white_borders(INPUT_IMAGE_PATH, OUTPUT_IMAGE_PATH, ROTATE_ANGLE)
+    assert isinstance(img, Image.Image)

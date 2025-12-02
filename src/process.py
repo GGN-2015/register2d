@@ -3,6 +3,13 @@ from PIL import Image
 import numpy as np
 import timer
 
+# PATTERN_VAL 描述内部点匹配时被视为什么值
+# 相比之下边界点在匹配时被视为 1
+# 匹配距离为 \sum_i y_i(x_i - y_i)^2
+# PATTERN_VAL 越大，内部点匹配的权重相对于边界越大
+PATTERN_VAL = 3
+assert PATTERN_VAL >= 2 and isinstance(PATTERN_VAL, int)
+
 def black_to_red_transparent(img_l):
     # 1. 验证输入是 L 模式（按需求保证，但添加校验更健壮）
     if img_l.mode != 'L':
@@ -83,15 +90,15 @@ def extract_boundary_pixels(input_img):
     # 5. 遍历每个像素，判断是否为边界像素
     for y in range(height):
         for x in range(width):
-            # 自身条件：像素为白色（<128）
-            if img_arr[y, x] < 128:
-                # 检查8邻域是否存在黑色像素（>128）
+            # 自身条件：像素为白色（>128）
+            if img_arr[y, x] > 128:
+                # 检查8邻域是否存在黑色像素（<128）
                 has_black_neighbor = False
                 for dy, dx in neighbors:
                     # 计算邻域坐标，避免越界
                     ny, nx = y + dy, x + dx
                     if 0 <= ny < height and 0 <= nx < width:
-                        if img_arr[ny, nx] > 128:
+                        if img_arr[ny, nx] < 128:
                             has_black_neighbor = True
                             break  # 找到一个即可，无需继续检查
                 # 满足两个条件，标记为边界像素（白色255）
@@ -143,6 +150,8 @@ DIRNOW = os.path.dirname(os.path.abspath(__file__))
 os.chdir(DIRNOW)
 
 def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MATCH_CNT=1):
+    assert MAX_MATCH_CNT >= 1
+
     # 完整图片的 size
     full_image_rgba = Image.open(FULL_IMAGE_INPUT).convert("RGBA")
     full_size = full_image_rgba.size
@@ -178,9 +187,6 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     border_part_np_flat = border_part_np.flatten()[::-1]
     assert full_image_np_flat.size == part_image_np_flat.size
     flat_size = full_image_np_flat.size
-
-    PATTERN_VAL = 10
-    assert PATTERN_VAL >= 2 and isinstance(PATTERN_VAL, int)
 
     # 预处理 X 向量
     timer.begin_timer("preprocessing vector X")
@@ -219,26 +225,39 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
 
 def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
     timer.begin_timer("$find_match_pos")
-    p1list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, True)
-    p2list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, False)
+    p1list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, False)
+    posX, posY = p1list[0]
 
-    ans = [
-        ((i, j), np.linalg.norm(p1list[i] - p2list[j]), (np.round((p1list[i] + p2list[j]) / 2).astype(np.int32)))
-        for i in range(len(p1list))
-        for j in range(len(p2list))
-        if np.linalg.norm(p1list[i] - p2list[j]) < 5.0
-    ]
-    ans.sort(key=lambda x: x[1])
+    # score 描述了当前匹配位置的优越程度，score 越低匹配越优秀
+    score = 0
+    full_image   = Image.open(FULL_IMAGE_INPUT).convert("L")
+    part_image   = Image.open(IMAGE_PART_INPUT).convert("L")
+    border_image = extract_boundary_pixels(part_image).convert("L")
+    cnt = 0
+    for i in range(part_image.width):
+        for j in range(part_image.height):
+
+            # 边界惩罚
+            if border_image.getpixel((i, j)) > 128:
+                if full_image.getpixel((posX + i, posY + j)) < 128: # 不在外表
+                    score += (PATTERN_VAL - 1) ** 2
+            
+            # 内部惩罚
+            if part_image.getpixel((i, j)) < 128:
+                if full_image.getpixel((posX + i, posY + j)) > 128: # 在外面
+                    score += PATTERN_VAL * (PATTERN_VAL - 1) ** 2
+                cnt += 1 # 统计内部点
+    
     timer.end_timer("$find_match_pos")
+    return posX, posY, score / cnt
 
-    if ans == []: # 没有匹配位置
-        return p2list[0]
-    else:
-        return ans[0][2]
-
+# 注意
+#   黑色像素是被匹配的实体像素
+#   白色像素是空白背景像素
 FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
 IMAGE_PART_INPUT = "all_data/data1/image_part1.jpg"
-posY, posX = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
+posY, posX, score = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
+print(score)
 
 # 红色的掩码图像
 red_mask = black_to_red_transparent(Image.open(IMAGE_PART_INPUT).convert("L"))
