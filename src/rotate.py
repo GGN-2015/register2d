@@ -18,7 +18,14 @@ def rotate_and_crop_white_borders(input_path, output_path, rotate_angle, toleran
             raise ValueError("容差值必须在0-255之间")
 
         # 1. 读取图片（保持原图通道，支持彩色/灰度图）
-        img = Image.open(input_path)
+        if isinstance(input_path, str):
+            img = Image.open(input_path)
+
+        elif isinstance(input_path, Image.Image):
+            img = input_path.copy()
+
+        else:
+            assert False
 
         if disp:
             print(f"成功读取图片：{input_path}，图片尺寸：{img.size}")

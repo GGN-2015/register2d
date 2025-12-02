@@ -156,7 +156,8 @@ def get_l_image(path_or_img:Image.Image|str):
     if isinstance(path_or_img, str):
         # 避免多次重读
         if __global_obj_image_cache.get(path_or_img) is None:
-            __global_obj_image_cache[path_or_img] = Image.open(path_or_img).convert("L")
+            img = Image.open(path_or_img).convert("L")
+            __global_obj_image_cache[path_or_img] = img
         return __global_obj_image_cache[path_or_img]
     
     elif isinstance(path_or_img, Image.Image):
@@ -270,9 +271,8 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
     timer.end_timer("$find_match_pos")
     return posX, posY, score / cnt
 
-import random
 import rotate
-import math
+from tqdm import tqdm
 def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 
     # 记录当前解（旋转角度）
@@ -285,44 +285,29 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
     rotate_best = rotate_now
     posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
-    # 统一角度范围
-    def angle_range(x:float) -> float:
-        while x >= 360:
-            x -= 360
-        while x < 0:
-            x += 360
-        return x
-
-    # 记录当前温度
-    temperature = 90.0
-    iter_cnt = 0
-    while temperature > 1.0:
-        iter_cnt += 1
-
-        rotate_next = angle_range(rotate_now + (random.random() * 2 - 1) * temperature)
-        img = rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_next)
-
-        # 设置计时器
+    for i in tqdm(range(5, 360, 5)):
+        rotate_now = i
         timer.ban_all_timer()
-        posX_next, posY_next, score_next = find_match_pos(FULL_IMAGE_INPUT, img)
+        posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, 
+            rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_now))
         timer.allow_all_timer()
+        
+        if score_now < score_best:
+            rotate_best = rotate_now
+            posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
-        # 记录最优解
-        if score_next < score_best:
-            posX_best, posY_best, score_best, rotate_best = posX_next, posY_next, score_next, rotate_next
+    rotate_base = rotate_best
+    for i in tqdm(range(-25, 25, 6)):
+        rotate_now = rotate_base + i / 10
 
-        # 遇到比当前解优秀的解
-        if score_next < score_now:
-            posX_now, posY_now, score_now, rotate_now = posX_next, posY_next, score_next, rotate_next
-
-        else:
-            # 以一定概率接受比较差的解
-            rate = math.exp(-abs(score_next - score_now)/((1/90)*temperature))
-            if random.random() < rate:
-                posX_now, posY_now, score_now, rotate_now = posX_next, posY_next, score_next, rotate_next
-
-        print(f"iter:{iter_cnt:5d}, rotate_now:{rotate_now:7.3f}, temperature:{temperature:.3f}, score_now:{score_now:.3f}, score_best:{score_best:.3f}")
-        temperature *= 0.95
+        timer.ban_all_timer()
+        posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, 
+            rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_now))
+        timer.allow_all_timer()
+        
+        if score_now < score_best:
+            rotate_best = rotate_now
+            posX_best, posY_best, score_best = posX_now, posY_now, score_now
     
     return posX_best, posY_best, score_best, rotate_best
 # 注意
