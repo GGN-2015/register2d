@@ -1,6 +1,7 @@
 import os
 from PIL import Image
 import numpy as np
+import timer
 
 def black_to_red_transparent(img_l):
     # 1. 验证输入是 L 模式（按需求保证，但添加校验更健壮）
@@ -141,18 +142,21 @@ def invert_color_pillow(point_img):
 DIRNOW = os.path.dirname(os.path.abspath(__file__))
 os.chdir(DIRNOW)
 
-def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MATCH_CNT=10):
+def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MATCH_CNT=1):
     # 完整图片的 size
     full_image_rgba = Image.open(FULL_IMAGE_INPUT).convert("RGBA")
     full_size = full_image_rgba.size
 
     # 完整图片的 numpy 对象
+    timer.begin_timer("image to numpy: full image")
     raw_image = Image.open(FULL_IMAGE_INPUT).convert("L")
     if INVERT_COLOR:
         raw_image = invert_color_pillow(raw_image)
     full_image_np = (np.array(raw_image) / 256).astype(np.float64)
+    timer.end_timer("image to numpy: full image")
 
     # 构建和完整图片相同尺寸
+    timer.begin_timer("image to numpy: patch image")
     raw_image = Image.open(IMAGE_PART_INPUT).convert("L")
     if INVERT_COLOR:
         raw_image = invert_color_pillow(raw_image)
@@ -166,6 +170,7 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
 
     # 构建子图的 numpy 对象
     part_image_np = (np.array(white_background) / 256).astype(np.float64)
+    timer.end_timer("image to numpy: patch image")
 
     # 展平
     full_image_np_flat  = full_image_np.flatten()
@@ -178,34 +183,42 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     assert PATTERN_VAL >= 2 and isinstance(PATTERN_VAL, int)
 
     # 预处理 X 向量
+    timer.begin_timer("preprocessing vector X")
     X  = np.zeros(flat_size)
     X[full_image_np_flat <  0.5] = PATTERN_VAL # 内部: PATTERN_VAL
     X[full_image_np_flat >= 0.5] = 1 # 外部: 1
+    X2 = X ** 2
+    timer.end_timer("preprocessing vector X")
 
     # 预处理 Y 向量
+    timer.begin_timer("preprocessing vector Y")
     Y  = np.zeros(flat_size)
     Y[part_image_np_flat  <  0.5] = PATTERN_VAL # 内部: PATTERN_VAL
     Y[part_image_np_flat  >= 0.5] = 0 # 外部: 0
     Y[border_part_np_flat >= 0.5] = 1 # 边界: 1
-
-    X2 = X ** 2
     Y2 = Y ** 2
     Y3SUM = (Y ** 3).sum()
+    timer.end_timer("preprocessing vector Y")
 
+    timer.begin_timer("fft_convolve_1d: X2Y, XY2")
     X2Y = fft_convolve_1d(X2, Y)
     XY2 = fft_convolve_1d(X, Y2)
     ANS = (X2Y - (2 * XY2) + Y3SUM)[len(X) - 1:]
     assert ANS.size == full_image_np_flat.size
     ANS = ANS.reshape(full_image_np.shape)
+    timer.end_timer("fft_convolve_1d: X2Y, XY2")
 
+    timer.begin_timer("sorting solution")
     answer_list = sort_array_by_value_with_coords(ANS)
     arr = []
     for i in range(min(MAX_MATCH_CNT, len(answer_list))):
         posX, posY = answer_list[i][1]
         arr.append([int(posY), int(posX)])
+    timer.end_timer("sorting solution")
     return np.array(arr)
 
 def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
+    timer.begin_timer("$find_match_pos")
     p1list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, True)
     p2list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, False)
 
@@ -216,14 +229,15 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
         if np.linalg.norm(p1list[i] - p2list[j]) < 5.0
     ]
     ans.sort(key=lambda x: x[1])
+    timer.end_timer("$find_match_pos")
 
     if ans == []: # 没有匹配位置
         return p2list[0]
     else:
         return ans[0][2]
 
-FULL_IMAGE_INPUT = "all_data/data2/full_image.png"
-IMAGE_PART_INPUT = "all_data/data2/image_part2.png"
+FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
+IMAGE_PART_INPUT = "all_data/data1/image_part1.jpg"
 posY, posX = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 
 # 红色的掩码图像
