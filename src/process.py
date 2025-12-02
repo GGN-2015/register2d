@@ -266,6 +266,8 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
     timer.end_timer("$find_match_pos")
     return posX, posY, score / cnt
 
+import random
+import rotate
 def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 
     # 记录当前解（旋转角度）
@@ -276,10 +278,23 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
     rotate_best = rotate_now
     posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
+    # 记录当前温度
+    temperature = 90.0
+    while temperature > 1.0:
+        rotate_next = rotate_now + (random.random() * 2 - 1) * temperature
+        img = rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, rotate_next)
+        posX_next, posY_next, score_next = find_match_pos(FULL_IMAGE_INPUT, img)
+
+        # 记录最优解
+        if score_now < rotate_best:
+            posX_now, posY_now, score_now = posX_next, posY_next, score_next
+            posX_best, posY_best, score_best = posX_now, posY_now, score_now
+
+        else:
+            assert False # 没实现完成
+        temperature *= 0.95
     
-
-
-
+    return posX_best, posY_best, score_best
 # 注意
 #   黑色像素是被匹配的实体像素
 #   白色像素是空白背景像素
