@@ -181,21 +181,25 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     timer.end_timer("image to numpy: full image")
 
     # 构建和完整图片相同尺寸
-    timer.begin_timer("image to numpy: patch image")
+    timer.begin_timer("image to numpy: patch image:p1")
     raw_image = get_l_image(IMAGE_PART_INPUT)
     if INVERT_COLOR:
         raw_image = invert_color_pillow(raw_image)
     part_image = raw_image
     white_background = Image.new("L", full_size, "white")
     white_background.paste(part_image, (0, 0))
+    timer.end_timer("image to numpy: patch image:p1")
 
     # 提取边界像素
+    timer.begin_timer("image to numpy: patch image:p2")
     border_part = extract_boundary_pixels(white_background)
     border_part_np = np.array(border_part)
+    timer.begin_timer("image to numpy: patch image:p2")
 
     # 构建子图的 numpy 对象
+    timer.begin_timer("image to numpy: patch image:p3")
     part_image_np = (np.array(white_background) / 256).astype(np.float64)
-    timer.end_timer("image to numpy: patch image")
+    timer.begin_timer("image to numpy: patch image:p3")
 
     # 展平
     full_image_np_flat  = full_image_np.flatten()
@@ -276,10 +280,10 @@ from tqdm import tqdm
 def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 
     # 记录当前解（旋转角度）
-    timer.ban_all_timer()
+    # timer.ban_all_timer()
     rotate_now = 0.0
     posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
-    timer.allow_all_timer()
+    # timer.allow_all_timer()
 
     # 记录最优解
     rotate_best = rotate_now
