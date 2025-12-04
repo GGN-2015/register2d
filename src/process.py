@@ -82,8 +82,8 @@ def extract_boundary_pixels(input_img):
     # 4. 定义8邻域的偏移量
     neighbors = [
         (dy, dx) 
-        for dy in range(-2, 3)  # dy: -2, -1, 0, 1, 2（行方向偏移）
-        for dx in range(-2, 3)  # dx: -2, -1, 0, 1, 2（列方向偏移）
+        for dy in range(-1, 2)  # dy: -2, -1, 0, 1, 2（行方向偏移）
+        for dx in range(-1, 2)  # dx: -2, -1, 0, 1, 2（列方向偏移）
         if not (dy == 0 and dx == 0)  # 排除中心像素
     ]
     
@@ -194,12 +194,12 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     timer.begin_timer("image to numpy: patch image:p2")
     border_part = extract_boundary_pixels(white_background)
     border_part_np = np.array(border_part)
-    timer.begin_timer("image to numpy: patch image:p2")
+    timer.end_timer("image to numpy: patch image:p2")
 
     # 构建子图的 numpy 对象
     timer.begin_timer("image to numpy: patch image:p3")
     part_image_np = (np.array(white_background) / 256).astype(np.float64)
-    timer.begin_timer("image to numpy: patch image:p3")
+    timer.end_timer("image to numpy: patch image:p3")
 
     # 展平
     full_image_np_flat  = full_image_np.flatten()
@@ -317,8 +317,8 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 # 注意
 #   黑色像素是被匹配的实体像素
 #   白色像素是空白背景像素
-FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
-IMAGE_PART_INPUT = "all_data/data1/image_part9.jpg"
+FULL_IMAGE_INPUT = "all_data/data2/full_image.png"
+IMAGE_PART_INPUT = "all_data/data2/image_part3.png"
 posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 print(score)
 
