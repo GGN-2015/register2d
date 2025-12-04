@@ -239,6 +239,8 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     arr = []
     for i in range(min(MAX_MATCH_CNT, len(answer_list))):
         posX, posY = answer_list[i][1]
+
+        # 这里最好再限制一下 posY 和 posX 的范围，避免掩码区域中有意义的部分移动到下一行
         arr.append([int(posY), int(posX)])
     timer.end_timer("sorting solution")
     return np.array(arr)
