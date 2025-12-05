@@ -3,6 +3,7 @@ from PIL import Image
 import cupy as cp
 import numpy as np
 import timer
+import functools
 
 # PATTERN_VAL 描述内部点匹配时被视为什么值
 # 相比之下边界点在匹配时被视为 1
@@ -169,24 +170,21 @@ def get_l_image(path_or_img:Image.Image|str):
     else:
         assert False
 
-def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR):
+@functools.cache
+def get_np_image(FULL_IMAGE_INPUT):
+    return (cp.array(get_l_image(FULL_IMAGE_INPUT)) / 256).astype(cp.float64)
 
-    # 完整图片的 size
-    full_size = get_l_image(FULL_IMAGE_INPUT).size
+def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 
     # 完整图片的 numpy 对象
     timer.begin_timer("image to numpy: full image")
-    raw_image = get_l_image(FULL_IMAGE_INPUT)
-    if INVERT_COLOR:
-        raw_image = invert_color_pillow(raw_image)
-    full_image_np = (cp.array(raw_image) / 256).astype(cp.float64)
+    full_size = get_l_image(FULL_IMAGE_INPUT).size
+    full_image_np = get_np_image(FULL_IMAGE_INPUT)
     timer.end_timer("image to numpy: full image")
 
     # 构建和完整图片相同尺寸
     timer.begin_timer("image to numpy: patch image:p1")
     raw_image = get_l_image(IMAGE_PART_INPUT)
-    if INVERT_COLOR:
-        raw_image = invert_color_pillow(raw_image)
     part_image = raw_image
     white_background = Image.new("L", full_size, "white")
     white_background.paste(part_image, (0, 0))
@@ -248,7 +246,7 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR):
 
 def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> cp.ndarray:
     timer.begin_timer("$find_match_pos")
-    p1list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, False)
+    p1list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
     posX, posY, score = p1list[0]
     timer.end_timer("$find_match_pos")
     return posX, posY, score
