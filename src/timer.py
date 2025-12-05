@@ -32,9 +32,9 @@ def end_timer(name:str, disp:bool=True) -> float:
 
         # 美元号开头的用黄色显示
         if name.startswith("$"):
-            print(f"Timer [\033[1;33m{name:30s}\033[0m]: {time_cost:13.6f}s")
+            print(f"Timer [\033[1;33m{name:35s}\033[0m]: {time_cost:13.6f}s")
 
         # 其他的用绿色显示
         else:
-            print(f"Timer [\033[1;32m{name:30s}\033[0m]: {time_cost:13.6f}s")
+            print(f"Timer [\033[1;32m{name:35s}\033[0m]: {time_cost:13.6f}s")
     return time_cost
