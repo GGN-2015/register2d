@@ -5,6 +5,7 @@ import numpy as np
 import timer
 import functools
 from match_arr import match_arr
+from cupyx.scipy.ndimage import binary_dilation
 
 def black_to_red_transparent(img_l):
     # 1. 验证输入是 L 模式（按需求保证，但添加校验更健壮）
@@ -105,45 +106,6 @@ def extract_boundary_pixels(input_img):
     boundary_img = Image.fromarray(boundary_arr, mode="L")
     return boundary_img
 
-def sort_array_by_value_with_coords(arr: cp.ndarray) -> list:
-    arr = cp.asnumpy(arr)
-
-    # 1. 获取数组的所有坐标（返回的是每个维度的索引数组，如2D返回(行索引数组, 列索引数组)）
-    coords = np.indices(arr.shape)  # 形状：(维度数, 元素总数)，如2D数组shape=(2, h, w)
-    
-    # 2. 将坐标数组展平为一维（每个维度的索引对应所有元素），再转置为 (元素总数, 维度数) 的坐标矩阵
-    # 例如2D数组：coords展平后为(2, h*w)，转置后为(h*w, 2)，每行是一个元素的(行,列)坐标
-    coords_flatten = coords.reshape(arr.ndim, -1).T  # arr.ndim 是数组维度数
-    
-    # 3. 将坐标矩阵的每行转为 tuple（方便后续使用，如(0,1)而非[0,1]）
-    coords_list = [tuple(coord) for coord in coords_flatten]
-    
-    # 4. 将数组本身展平为一维（与坐标列表一一对应）
-    values_flatten = arr.flatten()
-    
-    # 5. 组合 "值-坐标" 有序对（zip 对应索引的 值 和 坐标）
-    value_coord_pairs = list(zip(values_flatten, coords_list))
-    
-    # 6. 按元素值从小到大排序（key=lambda x: x[0] 表示按第一个元素（值）排序）
-    sorted_pairs = sorted(value_coord_pairs, key=lambda x: x[0])
-    
-    return sorted_pairs
-
-def invert_color_pillow(point_img):
-    # 核心：对每个像素应用 255 - x（反色公式）
-    # RGBA 模式：仅反转 RGB 通道，保留 Alpha 通道（用 lambda x: x 保持不变）
-    if point_img.mode == "RGBA":
-        # 分别处理 R、G、B、A 通道，A通道不反转
-        r, g, b, a = point_img.split()
-        r_invert = r.point(lambda x: 255 - x)
-        g_invert = g.point(lambda x: 255 - x)
-        b_invert = b.point(lambda x: 255 - x)
-        invert_img = Image.merge("RGBA", (r_invert, g_invert, b_invert, a))
-    else:
-        # L/RGB 模式：直接对所有通道应用反色
-        invert_img = point_img.point(lambda x: 255 - x)
-    return invert_img
-
 DIRNOW = os.path.dirname(os.path.abspath(__file__))
 os.chdir(DIRNOW)
 
@@ -168,28 +130,23 @@ def get_l_image(path_or_img:Image.Image|str):
 def get_np_image(FULL_IMAGE_INPUT):
     return (cp.array(get_l_image(FULL_IMAGE_INPUT)) / 256).astype(cp.float64)
 
-def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
+def border_position(arr):
+    mask_ge05 = arr >= 0.5
+    struct_element = cp.ones((3, 3), dtype=bool)
+    mask_neighbor_ge05 = binary_dilation(mask_ge05, structure=struct_element, border_value=False)
+    mask_gt05 = arr > 0.5
+    final_mask = mask_gt05 & mask_neighbor_ge05
+    result = final_mask.astype(cp.int32)
+    return result
 
-    # 完整图片的 numpy 对象
-    timer.begin_timer("image to numpy: full image")
-    full_size = get_l_image(FULL_IMAGE_INPUT).size
+def find_match_pos_raw(FULL_IMAGE_INPUT: str|Image.Image, IMAGE_PART_INPUT: str|Image.Image):
     full_image_np = get_np_image(FULL_IMAGE_INPUT)
-    timer.end_timer("image to numpy: full image")
-
-    # 构建和完整图片相同尺寸
-    timer.begin_timer("image to numpy: patch image:p1")
     part_image = get_l_image(IMAGE_PART_INPUT)
-    timer.end_timer("image to numpy: patch image:p1")
-
-    # 提取边界像素
-    timer.begin_timer("image to numpy: patch image:p2")
-    raw_border_part = extract_boundary_pixels(part_image)
-    timer.end_timer("image to numpy: patch image:p2")
 
     # 构建子图的 numpy 对象
     timer.begin_timer("image to numpy: patch image:p3")
-    border_part_np = cp.asarray(raw_border_part)
     part_image_np = (cp.array(part_image) / 256).astype(cp.float64)
+    border_part_np = border_position(part_image_np)
     timer.end_timer("image to numpy: patch image:p3")
 
     # 预处理 X 向量
@@ -218,7 +175,7 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
     posX, posY = cp.unravel_index(pos, ANS.shape)
     timer.end_timer("sorting solution:p1")
 
-    return [(posY, posX, ANS[posX, posY])]
+    return [(posY, posX, ANS[posX, posY] / cp.sum(P))]
 
 def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> cp.ndarray:
     timer.begin_timer("$find_match_pos")
@@ -273,6 +230,8 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 #   白色像素是空白背景像素
 FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
 IMAGE_PART_INPUT = "all_data/data1/image_part9.jpg"
+get_np_image(FULL_IMAGE_INPUT)
+get_np_image(IMAGE_PART_INPUT)
 posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 print(score)
 
