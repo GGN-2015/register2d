@@ -26,7 +26,7 @@ def black_to_red_transparent(img_l):
     
     # 给黑色像素赋值：R=255，Alpha=255（G和B保持0）
     rgba_arr[black_mask, 0] = 255  # R通道：红色
-    rgba_arr[black_mask, 3] = 128  # Alpha通道：半透明（255=完全不透明，0=完全透明）
+    rgba_arr[black_mask, 3] = 192  # Alpha通道：半透明（255=完全不透明，0=完全透明）
     
     # 其他像素保持默认：RGB=0, Alpha=0（透明），无需额外处理
     
@@ -58,53 +58,6 @@ def fft_convolve_1d(vec1, vec2) -> cp.ndarray:
     conv_result = cp.real(conv_result)
     
     return conv_result
-
-def extract_boundary_pixels(input_img):
-    # 1. 处理输入：若为路径则打开图片，若为Image对象则直接使用
-    if isinstance(input_img, str):
-        with get_l_image(input_img) as img:
-            gray_img = img.convert("L")  # 转为单通道灰度图（0-255）
-    elif isinstance(input_img, Image.Image):
-        gray_img = input_img.convert("L")  # 确保转为L模式，兼容彩色/灰度输入
-    else:
-        raise TypeError("输入必须是图片路径字符串或 Pillow Image 对象")
-    
-    # 2. 转为NumPy数组进行处理（shape=(高度, 宽度)）
-    img_arr = np.array(gray_img)
-    height, width = img_arr.shape
-    
-    # 3. 初始化输出数组（全黑，同尺寸）
-    boundary_arr = np.zeros((height, width), dtype=cp.uint8)  # 0=黑色
-    
-    # 4. 定义8邻域的偏移量
-    neighbors = [
-        (dy, dx) 
-        for dy in range(-1, 2)  # dy: -2, -1, 0, 1, 2（行方向偏移）
-        for dx in range(-1, 2)  # dx: -2, -1, 0, 1, 2（列方向偏移）
-        if not (dy == 0 and dx == 0)  # 排除中心像素
-    ]
-    
-    # 5. 遍历每个像素，判断是否为边界像素
-    for y in range(height):
-        for x in range(width):
-            # 自身条件：像素为白色（>128）
-            if img_arr[y, x] > 128:
-                # 检查8邻域是否存在黑色像素（<128）
-                has_black_neighbor = False
-                for dy, dx in neighbors:
-                    # 计算邻域坐标，避免越界
-                    ny, nx = y + dy, x + dx
-                    if 0 <= ny < height and 0 <= nx < width:
-                        if img_arr[ny, nx] < 128:
-                            has_black_neighbor = True
-                            break  # 找到一个即可，无需继续检查
-                # 满足两个条件，标记为边界像素（白色255）
-                if has_black_neighbor:
-                    boundary_arr[y, x] = 255
-    
-    # 6. 转为Pillow Image对象并返回（不保存文件）
-    boundary_img = Image.fromarray(boundary_arr, mode="L")
-    return boundary_img
 
 DIRNOW = os.path.dirname(os.path.abspath(__file__))
 os.chdir(DIRNOW)
@@ -199,7 +152,7 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
     rotate_best = rotate_now
     posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
-    for i in tqdm(range(5, 360, 5)):
+    for i in tqdm(range(4, 360, 4)):
         rotate_now = i
         timer.ban_all_timer()
         posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, 
@@ -211,7 +164,7 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
             posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
     rotate_base = rotate_best
-    for i in tqdm(range(-25, 25, 6)):
+    for i in tqdm(range(-20, 20, 3)):
         rotate_now = rotate_base + i / 10
 
         timer.ban_all_timer()
