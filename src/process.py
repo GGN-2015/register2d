@@ -4,13 +4,7 @@ import cupy as cp
 import numpy as np
 import timer
 import functools
-
-# PATTERN_VAL 描述内部点匹配时被视为什么值
-# 相比之下边界点在匹配时被视为 1
-# 匹配距离为 \sum_i y_i(x_i - y_i)^2
-# PATTERN_VAL 越大，内部点匹配的权重相对于边界越大
-PATTERN_VAL = 3
-assert PATTERN_VAL >= 2 and isinstance(PATTERN_VAL, int)
+from match_arr import match_arr
 
 def black_to_red_transparent(img_l):
     # 1. 验证输入是 L 模式（按需求保证，但添加校验更健壮）
@@ -184,58 +178,40 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 
     # 构建和完整图片相同尺寸
     timer.begin_timer("image to numpy: patch image:p1")
-    raw_image = get_l_image(IMAGE_PART_INPUT)
-    part_image = raw_image
-    white_background = Image.new("L", full_size, "white")
-    white_background.paste(part_image, (0, 0))
+    part_image = get_l_image(IMAGE_PART_INPUT)
     timer.end_timer("image to numpy: patch image:p1")
 
     # 提取边界像素
     timer.begin_timer("image to numpy: patch image:p2")
     raw_border_part = extract_boundary_pixels(part_image)
-    black_background = Image.new("L", full_size, "black")
-    black_background.paste(raw_border_part, (0, 0))
-    border_part = black_background
     timer.end_timer("image to numpy: patch image:p2")
 
     # 构建子图的 numpy 对象
     timer.begin_timer("image to numpy: patch image:p3")
-    border_part_np = cp.asarray(cp._numpy.array(border_part))
-    part_image_np = (cp.array(white_background) / 256).astype(cp.float64)
+    border_part_np = cp.asarray(raw_border_part)
+    part_image_np = (cp.array(part_image) / 256).astype(cp.float64)
     timer.end_timer("image to numpy: patch image:p3")
-
-    # 展平
-    full_image_np_flat  = full_image_np.flatten()
-    part_image_np_flat  = part_image_np.flatten()[::-1] # 翻转了
-    border_part_np_flat = border_part_np.flatten()[::-1]
-    assert full_image_np_flat.size == part_image_np_flat.size
-    flat_size = full_image_np_flat.size
 
     # 预处理 X 向量
     timer.begin_timer("preprocessing vector X")
-    X  = cp.zeros(flat_size)
-    X[full_image_np_flat <  0.5] = PATTERN_VAL # 内部: PATTERN_VAL
-    X[full_image_np_flat >= 0.5] = 1 # 外部: 1
-    X2 = X ** 2
+    X = cp.zeros(full_image_np.shape)
+    X[full_image_np <  0.5] = 1 # 内部: 1
+    X[full_image_np >= 0.5] = 0 # 外部: 0
     timer.end_timer("preprocessing vector X")
 
-    # 预处理 Y 向量
+    # 预处理 Y 和 P 向量
     timer.begin_timer("preprocessing vector Y")
-    Y  = cp.zeros(flat_size)
-    Y[part_image_np_flat  <  0.5] = PATTERN_VAL # 内部: PATTERN_VAL
-    Y[part_image_np_flat  >= 0.5] = 0 # 外部: 0
-    Y[border_part_np_flat >= 0.5] = 1 # 边界: 1
-    Y2 = Y ** 2
-    Y3SUM = (Y ** 3).sum()
+    Y = cp.zeros(part_image_np.shape)
+    Y[part_image_np  <  0.5] = 1 # 内部: 1
+    Y[part_image_np  >= 0.5] = 0 # 外部: 0
+    P = cp.zeros(part_image_np.shape)
+    P[part_image_np  <  0.5] = 1.0 # 内部权重: 1
+    P[border_part_np >= 0.5] = 0.5 # 边界权重: 0.5
     timer.end_timer("preprocessing vector Y")
 
-    timer.begin_timer("fft_convolve_1d: X2Y, XY2")
-    X2Y = fft_convolve_1d(X2, Y)
-    XY2 = fft_convolve_1d(X, Y2)
-    ANS = (X2Y - (2 * XY2) + Y3SUM)[len(X) - 1:]
-    assert ANS.size == full_image_np_flat.size
-    ANS = ANS.reshape(full_image_np.shape)
-    timer.end_timer("fft_convolve_1d: X2Y, XY2")
+    timer.begin_timer("match_nd")
+    ANS = match_arr(X, Y, P)
+    timer.end_timer("match_nd")
 
     timer.begin_timer("sorting solution:p1")
     pos = cp.argmin(ANS)
