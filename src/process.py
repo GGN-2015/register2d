@@ -85,7 +85,7 @@ def get_np_image(FULL_IMAGE_INPUT):
 
 def border_position(arr):
     mask_ge05 = arr < 0.5 # 黑色像素
-    struct_element = cp.ones((3, 3), dtype=bool)
+    struct_element = cp.ones((5, 5), dtype=bool)
     mask_neighbor_ge05 = binary_dilation(mask_ge05, structure=struct_element, border_value=False)
     mask_gt05 = arr >= 0.5 # 白色像素
     final_mask = mask_gt05 & mask_neighbor_ge05 # 当前像素为白色且周围存在黑色像素
