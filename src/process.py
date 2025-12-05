@@ -84,10 +84,10 @@ def get_np_image(FULL_IMAGE_INPUT):
     return (cp.array(get_l_image(FULL_IMAGE_INPUT)) / 256).astype(cp.float64)
 
 def border_position(arr):
-    mask_ge05 = arr >= 0.5
+    mask_ge05 = arr < 0.5 # 黑色像素
     struct_element = cp.ones((3, 3), dtype=bool)
     mask_neighbor_ge05 = binary_dilation(mask_ge05, structure=struct_element, border_value=False)
-    mask_gt05 = arr > 0.5
+    mask_gt05 = arr >= 0.5 # 白色像素
     final_mask = mask_gt05 & mask_neighbor_ge05
     result = final_mask.astype(cp.int32)
     return result
@@ -164,7 +164,7 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
             posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
     rotate_base = rotate_best
-    for i in tqdm(range(-20, 20, 3)):
+    for i in tqdm(range(-20, 20, 4)):
         rotate_now = rotate_base + i / 10
 
         timer.ban_all_timer()
