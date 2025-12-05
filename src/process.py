@@ -256,6 +256,7 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> cp.ndarray:
 import rotate
 from tqdm import tqdm
 def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
+    timer.begin_timer("$find_match_pos_and_rotate")
 
     # 记录当前解（旋转角度）
     # timer.ban_all_timer()
@@ -291,6 +292,7 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
             rotate_best = rotate_now
             posX_best, posY_best, score_best = posX_now, posY_now, score_now
     
+    timer.end_timer("$find_match_pos_and_rotate")
     return posX_best, posY_best, score_best, rotate_best
 # 注意
 #   黑色像素是被匹配的实体像素
