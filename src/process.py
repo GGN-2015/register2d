@@ -169,8 +169,7 @@ def get_l_image(path_or_img:Image.Image|str):
     else:
         assert False
 
-def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MATCH_CNT=1):
-    assert MAX_MATCH_CNT >= 1
+def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR):
 
     # 完整图片的 size
     full_size = get_l_image(FULL_IMAGE_INPUT).size
@@ -237,16 +236,12 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     ANS = ANS.reshape(full_image_np.shape)
     timer.end_timer("fft_convolve_1d: X2Y, XY2")
 
-    timer.begin_timer("sorting solution")
-    answer_list = sort_array_by_value_with_coords(ANS)
-    arr = []
-    for i in range(min(MAX_MATCH_CNT, len(answer_list))):
-        posX, posY = answer_list[i][1]
+    timer.begin_timer("sorting solution:p1")
+    pos = cp.argmin(ANS)
+    posX, posY = cp.unravel_index(pos, ANS.shape)
+    timer.end_timer("sorting solution:p1")
 
-        # 这里最好再限制一下 posY 和 posX 的范围，避免掩码区域中有意义的部分移动到下一行
-        arr.append((int(posY), int(posX), answer_list[i][0]))
-    timer.end_timer("sorting solution")
-    return cp.array(arr)
+    return [(posY, posX, ANS[posX, posY])]
 
 def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> cp.ndarray:
     timer.begin_timer("$find_match_pos")
