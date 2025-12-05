@@ -88,7 +88,7 @@ def border_position(arr):
     struct_element = cp.ones((3, 3), dtype=bool)
     mask_neighbor_ge05 = binary_dilation(mask_ge05, structure=struct_element, border_value=False)
     mask_gt05 = arr >= 0.5 # 白色像素
-    final_mask = mask_gt05 & mask_neighbor_ge05
+    final_mask = mask_gt05 & mask_neighbor_ge05 # 当前像素为白色且周围存在黑色像素
     result = final_mask.astype(cp.int32)
     return result
 
