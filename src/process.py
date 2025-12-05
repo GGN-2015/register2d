@@ -194,12 +194,15 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR):
 
     # 提取边界像素
     timer.begin_timer("image to numpy: patch image:p2")
-    border_part = extract_boundary_pixels(white_background)
-    border_part_np = cp.asarray(cp._numpy.array(border_part))
+    raw_border_part = extract_boundary_pixels(part_image)
+    black_background = Image.new("L", full_size, "black")
+    black_background.paste(raw_border_part, (0, 0))
+    border_part = black_background
     timer.end_timer("image to numpy: patch image:p2")
 
     # 构建子图的 numpy 对象
     timer.begin_timer("image to numpy: patch image:p3")
+    border_part_np = cp.asarray(cp._numpy.array(border_part))
     part_image_np = (cp.array(white_background) / 256).astype(cp.float64)
     timer.end_timer("image to numpy: patch image:p3")
 
