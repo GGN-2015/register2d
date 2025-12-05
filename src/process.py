@@ -1,5 +1,6 @@
 import os
 from PIL import Image
+import cupy as cp
 import numpy as np
 import timer
 
@@ -16,12 +17,12 @@ def black_to_red_transparent(img_l):
         raise ValueError(f"输入图像必须是 L 模式，当前模式为：{img_l.mode}")
     
     # 2. 转为 NumPy 数组（shape=(高度, 宽度)，灰度值 0-255）
-    img_arr = np.array(img_l, dtype=np.uint8)
+    img_arr = cp.array(img_l, dtype=cp.uint8)
     height, width = img_arr.shape
     
     # 3. 构建 RGBA 数组（shape=(高度, 宽度, 4)，4通道：R, G, B, Alpha）
     # 初始化全透明（Alpha=0），RGB 通道默认0
-    rgba_arr = np.zeros((height, width, 4), dtype=np.uint8)
+    rgba_arr = cp.zeros((height, width, 4), dtype=cp.uint8)
     
     # 4. 核心逻辑：黑色像素（>128）→ 红色（R=255, G=0, B=0）+ 不透明（Alpha=255）
     # 生成黑色像素的掩码（True 表示是黑色像素）
@@ -34,10 +35,10 @@ def black_to_red_transparent(img_l):
     # 其他像素保持默认：RGB=0, Alpha=0（透明），无需额外处理
     
     # 5. 转为 RGBA 模式的 Pillow Image 对象并返回
-    rgba_img = Image.fromarray(rgba_arr, mode='RGBA')
+    rgba_img = Image.fromarray(cp.asnumpy(rgba_arr), mode='RGBA')
     return rgba_img
 
-def fft_convolve_1d(vec1, vec2) -> np.ndarray:
+def fft_convolve_1d(vec1, vec2) -> cp.ndarray:
     # 1. 验证输入是一维向量
     if vec1.ndim != 1 or vec2.ndim != 1:
         raise ValueError("输入必须是一维 NumPy 向量")
@@ -48,17 +49,17 @@ def fft_convolve_1d(vec1, vec2) -> np.ndarray:
     min_length = max(len1, len2) * 2 - 1  # 线性卷积的理论长度
     
     # 3. 对两个向量做零填充（填充到最小长度，确保卷积结果完整）
-    vec1_padded = np.pad(vec1, (0, min_length - len1), mode='constant')
-    vec2_padded = np.pad(vec2, (0, min_length - len2), mode='constant')
+    vec1_padded = cp.pad(vec1, (0, min_length - len1), mode='constant')
+    vec2_padded = cp.pad(vec2, (0, min_length - len2), mode='constant')
     
     # 4. 核心步骤：FFT → 频域乘积 → 逆FFT
-    fft1 = np.fft.fft(vec1_padded)  # 向量1的频域表示
-    fft2 = np.fft.fft(vec2_padded)  # 向量2的频域表示
+    fft1 = cp.fft.fft(vec1_padded)  # 向量1的频域表示
+    fft2 = cp.fft.fft(vec2_padded)  # 向量2的频域表示
     fft_product = fft1 * fft2       # 频域乘积（对应时域卷积）
-    conv_result = np.fft.ifft(fft_product)  # 逆FFT还原时域
+    conv_result = cp.fft.ifft(fft_product)  # 逆FFT还原时域
     
     # 5. 去除虚部误差（数值计算导致的微小虚部，实际卷积结果应为实数）
-    conv_result = np.real(conv_result)
+    conv_result = cp.real(conv_result)
     
     return conv_result
 
@@ -77,7 +78,7 @@ def extract_boundary_pixels(input_img):
     height, width = img_arr.shape
     
     # 3. 初始化输出数组（全黑，同尺寸）
-    boundary_arr = np.zeros((height, width), dtype=np.uint8)  # 0=黑色
+    boundary_arr = np.zeros((height, width), dtype=cp.uint8)  # 0=黑色
     
     # 4. 定义8邻域的偏移量
     neighbors = [
@@ -109,7 +110,9 @@ def extract_boundary_pixels(input_img):
     boundary_img = Image.fromarray(boundary_arr, mode="L")
     return boundary_img
 
-def sort_array_by_value_with_coords(arr):
+def sort_array_by_value_with_coords(arr: cp.ndarray) -> list:
+    arr = cp.asnumpy(arr)
+
     # 1. 获取数组的所有坐标（返回的是每个维度的索引数组，如2D返回(行索引数组, 列索引数组)）
     coords = np.indices(arr.shape)  # 形状：(维度数, 元素总数)，如2D数组shape=(2, h, w)
     
@@ -177,7 +180,7 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     raw_image = get_l_image(FULL_IMAGE_INPUT)
     if INVERT_COLOR:
         raw_image = invert_color_pillow(raw_image)
-    full_image_np = (np.array(raw_image) / 256).astype(np.float64)
+    full_image_np = (cp.array(raw_image) / 256).astype(cp.float64)
     timer.end_timer("image to numpy: full image")
 
     # 构建和完整图片相同尺寸
@@ -193,12 +196,12 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
     # 提取边界像素
     timer.begin_timer("image to numpy: patch image:p2")
     border_part = extract_boundary_pixels(white_background)
-    border_part_np = np.array(border_part)
+    border_part_np = cp.asarray(cp._numpy.array(border_part))
     timer.end_timer("image to numpy: patch image:p2")
 
     # 构建子图的 numpy 对象
     timer.begin_timer("image to numpy: patch image:p3")
-    part_image_np = (np.array(white_background) / 256).astype(np.float64)
+    part_image_np = (cp.array(white_background) / 256).astype(cp.float64)
     timer.end_timer("image to numpy: patch image:p3")
 
     # 展平
@@ -210,7 +213,7 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
 
     # 预处理 X 向量
     timer.begin_timer("preprocessing vector X")
-    X  = np.zeros(flat_size)
+    X  = cp.zeros(flat_size)
     X[full_image_np_flat <  0.5] = PATTERN_VAL # 内部: PATTERN_VAL
     X[full_image_np_flat >= 0.5] = 1 # 外部: 1
     X2 = X ** 2
@@ -218,7 +221,7 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
 
     # 预处理 Y 向量
     timer.begin_timer("preprocessing vector Y")
-    Y  = np.zeros(flat_size)
+    Y  = cp.zeros(flat_size)
     Y[part_image_np_flat  <  0.5] = PATTERN_VAL # 内部: PATTERN_VAL
     Y[part_image_np_flat  >= 0.5] = 0 # 外部: 0
     Y[border_part_np_flat >= 0.5] = 1 # 边界: 1
@@ -241,41 +244,16 @@ def find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, INVERT_COLOR, MAX_MAT
         posX, posY = answer_list[i][1]
 
         # 这里最好再限制一下 posY 和 posX 的范围，避免掩码区域中有意义的部分移动到下一行
-        arr.append([int(posY), int(posX)])
+        arr.append((int(posY), int(posX), answer_list[i][0]))
     timer.end_timer("sorting solution")
-    return np.array(arr)
+    return cp.array(arr)
 
-def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> np.ndarray:
+def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> cp.ndarray:
     timer.begin_timer("$find_match_pos")
     p1list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT, False)
-    posX, posY = p1list[0]
-
-    # score 描述了当前匹配位置的优越程度，score 越低匹配越优秀
-    score = 0
-    full_image   = get_l_image(FULL_IMAGE_INPUT)
-    part_image   = get_l_image(IMAGE_PART_INPUT)
-    border_image = extract_boundary_pixels(part_image).convert("L")
-    cnt = 0
-    for i in range(part_image.width):
-        for j in range(part_image.height):
-            if 0 <= posX + i < full_image.width and 0 <= posY + j < full_image.height:
-                pixel = full_image.getpixel((posX + i, posY + j))
-            else:
-                pixel = 255 # 出界
-
-            # 边界惩罚
-            if border_image.getpixel((i, j)) > 128:
-                if pixel < 128: # 不在外表
-                    score += (PATTERN_VAL - 1) ** 2
-            
-            # 内部惩罚
-            if part_image.getpixel((i, j)) < 128:
-                if pixel > 128: # 在外面
-                    score += PATTERN_VAL * (PATTERN_VAL - 1) ** 2
-                cnt += 1 # 统计内部点
-    
+    posX, posY, score = p1list[0]
     timer.end_timer("$find_match_pos")
-    return posX, posY, score / cnt
+    return posX, posY, score
 
 import rotate
 from tqdm import tqdm
@@ -319,8 +297,8 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
 # 注意
 #   黑色像素是被匹配的实体像素
 #   白色像素是空白背景像素
-FULL_IMAGE_INPUT = "all_data/data2/full_image.png"
-IMAGE_PART_INPUT = "all_data/data2/image_part3.png"
+FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
+IMAGE_PART_INPUT = "all_data/data1/image_part9.jpg"
 posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 print(score)
 
@@ -328,5 +306,5 @@ print(score)
 red_mask = black_to_red_transparent(
     rotate.rotate_and_crop_white_borders(get_l_image(IMAGE_PART_INPUT), None, rot_deg))
 ans_image = get_l_image(FULL_IMAGE_INPUT).convert("RGBA").copy()
-ans_image.paste(red_mask, (posY, posX), mask=red_mask)
+ans_image.paste(red_mask, (int(posY), int(posX)), mask=red_mask)
 ans_image.show()
