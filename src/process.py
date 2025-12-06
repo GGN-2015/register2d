@@ -151,10 +151,10 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
     timer.begin_timer("$find_match_pos_and_rotate")
 
     # 记录当前解（旋转角度）
-    # timer.ban_all_timer()
+    timer.ban_all_timer()
     rotate_now = 0.0
     posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
-    # timer.allow_all_timer()
+    timer.allow_all_timer()
 
     # 记录最优解
     rotate_best = rotate_now
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     # 注意
     #   黑色像素是被匹配的实体像素
     #   白色像素是空白背景像素
-    FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
+    FULL_IMAGE_INPUT = "all_data/data2/full_image.png"
     IMAGE_PART_INPUT = rotate.rotate_and_crop_white_borders(rand_crop(get_l_image(FULL_IMAGE_INPUT)), None, random.random() * 360)
 
     get_cp_image(FULL_IMAGE_INPUT)
