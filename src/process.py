@@ -1,11 +1,12 @@
 import os
 from PIL import Image
 import cupy as cp
-import numpy as np
 import timer
 import functools
 from match_arr import match_arr
 from cupyx.scipy.ndimage import binary_dilation
+from rand_crop import rand_crop
+import random
 
 def black_to_red_transparent(img_l):
     # 1. 验证输入是 L 模式（按需求保证，但添加校验更健壮）
@@ -59,9 +60,6 @@ def fft_convolve_1d(vec1, vec2) -> cp.ndarray:
     
     return conv_result
 
-DIRNOW = os.path.dirname(os.path.abspath(__file__))
-os.chdir(DIRNOW)
-
 __global_obj_image_cache = {}
 
 # 获取一个图片
@@ -80,8 +78,18 @@ def get_l_image(path_or_img:Image.Image|str):
         assert False
 
 @functools.cache
-def get_np_image(FULL_IMAGE_INPUT):
+def get_cp_image_str(FULL_IMAGE_INPUT:str):
     return (cp.array(get_l_image(FULL_IMAGE_INPUT)) / 256).astype(cp.float64)
+
+def get_cp_image(FULL_IMAGE_INPUT:str|Image.Image):
+    if isinstance(FULL_IMAGE_INPUT, str):
+        return get_cp_image_str(FULL_IMAGE_INPUT) 
+    
+    elif isinstance(FULL_IMAGE_INPUT, Image.Image):
+        return (cp.array(FULL_IMAGE_INPUT) / 256).astype(cp.float64)
+    
+    else:
+        assert False
 
 def border_position(arr):
     mask_ge05 = arr < 0.5 # 黑色像素
@@ -93,30 +101,30 @@ def border_position(arr):
     return result
 
 def find_match_pos_raw(FULL_IMAGE_INPUT: str|Image.Image, IMAGE_PART_INPUT: str|Image.Image):
-    full_image_np = get_np_image(FULL_IMAGE_INPUT)
+    full_image_cp = get_cp_image(FULL_IMAGE_INPUT)
     part_image = get_l_image(IMAGE_PART_INPUT)
 
     # 构建子图的 numpy 对象
     timer.begin_timer("image to numpy: patch image:p3")
-    part_image_np = (cp.array(part_image) / 256).astype(cp.float64)
-    border_part_np = border_position(part_image_np)
+    part_image_cp = (cp.array(part_image) / 256).astype(cp.float64)
+    border_part_cp = border_position(part_image_cp)
     timer.end_timer("image to numpy: patch image:p3")
 
     # 预处理 X 向量
     timer.begin_timer("preprocessing vector X")
-    X = cp.zeros(full_image_np.shape)
-    X[full_image_np <  0.5] = 1 # 内部: 1
-    X[full_image_np >= 0.5] = 0 # 外部: 0
+    X = cp.zeros(full_image_cp.shape)
+    X[full_image_cp <  0.5] = 1 # 内部: 1
+    X[full_image_cp >= 0.5] = 0 # 外部: 0
     timer.end_timer("preprocessing vector X")
 
     # 预处理 Y 和 P 向量
     timer.begin_timer("preprocessing vector Y")
-    Y = cp.zeros(part_image_np.shape)
-    Y[part_image_np  <  0.5] = 1 # 内部: 1
-    Y[part_image_np  >= 0.5] = 0 # 外部: 0
-    P = cp.zeros(part_image_np.shape)
-    P[part_image_np  <  0.5] = 1.0 # 内部权重: 1
-    P[border_part_np >= 0.5] = 0.5 # 边界权重: 0.5
+    Y = cp.zeros(part_image_cp.shape)
+    Y[part_image_cp  <  0.5] = 1 # 内部: 1
+    Y[part_image_cp  >= 0.5] = 0 # 外部: 0
+    P = cp.zeros(part_image_cp.shape)
+    P[part_image_cp  <  0.5] = 1.0 # 内部权重: 1
+    P[border_part_cp >= 0.5] = 0.5 # 边界权重: 0.5
     timer.end_timer("preprocessing vector Y")
 
     timer.begin_timer("match_nd")
@@ -164,7 +172,7 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
             posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
     rotate_base = rotate_best
-    for i in tqdm(range(-20, 20, 4)):
+    for i in tqdm(range(-20, 20, 3)):
         rotate_now = rotate_base + i / 10
 
         timer.ban_all_timer()
@@ -178,19 +186,24 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
     
     timer.end_timer("$find_match_pos_and_rotate")
     return posX_best, posY_best, score_best, rotate_best
-# 注意
-#   黑色像素是被匹配的实体像素
-#   白色像素是空白背景像素
-FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
-IMAGE_PART_INPUT = "all_data/data1/image_part9.jpg"
-get_np_image(FULL_IMAGE_INPUT)
-get_np_image(IMAGE_PART_INPUT)
-posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
-print(score)
 
-# 红色的掩码图像
-red_mask = black_to_red_transparent(
-    rotate.rotate_and_crop_white_borders(get_l_image(IMAGE_PART_INPUT), None, rot_deg))
-ans_image = get_l_image(FULL_IMAGE_INPUT).convert("RGBA").copy()
-ans_image.paste(red_mask, (int(posY), int(posX)), mask=red_mask)
-ans_image.show()
+if __name__ == "__main__":
+    DIRNOW = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(DIRNOW)
+
+    # 注意
+    #   黑色像素是被匹配的实体像素
+    #   白色像素是空白背景像素
+    FULL_IMAGE_INPUT = "all_data/data1/full_image.jpg"
+    IMAGE_PART_INPUT = rotate.rotate_and_crop_white_borders(rand_crop(get_l_image(FULL_IMAGE_INPUT)), None, random.random() * 360)
+
+    get_cp_image(FULL_IMAGE_INPUT)
+    posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
+    print(score)
+
+    # 红色的掩码图像
+    red_mask = black_to_red_transparent(
+        rotate.rotate_and_crop_white_borders(get_l_image(IMAGE_PART_INPUT), None, rot_deg))
+    ans_image = get_l_image(FULL_IMAGE_INPUT).convert("RGBA").copy()
+    ans_image.paste(red_mask, (int(posY), int(posX)), mask=red_mask)
+    ans_image.show()
