@@ -19,5 +19,5 @@ posY, posX, score, rot_deg = register2d.find_match_pos_and_rotate(image_a_path, 
 register2d.get_red_mask_image(image_a_path, image_b_path, posY, posX, rot_deg).show()
 
 # show the position of image B in a white image same size as A
-register2d.get_rotated_and_moved_image(image_a_path, IMAGE_PART_INPUT, posY, posX, rot_deg).show()
+register2d.get_rotated_and_moved_image(image_a_path, image_b_path, posY, posX, rot_deg).show()
 ```
