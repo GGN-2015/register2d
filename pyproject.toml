@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "register2d"
+description = "A 2d black-white binary image registration algorithm."
+authors = [
+    { name = "GGN_2015", email = "neko@jlulug.org" }
+]
+version = "0.0.0"
+dependencies = [
+    "cupy", "numpy", "tqdm", "cupy_fft_match", "pillow"
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+
+[tool.setuptools]
+include-package-data = true

@@ -1,71 +1,73 @@
-import os
+from . import rotate
+from . import timer
+
+from tqdm import tqdm
 from PIL import Image
 import cupy as cp
-import timer
-import functools
-from match_arr import match_arr
+from cupy_fft_match import match_arr
 from cupyx.scipy.ndimage import binary_dilation
-from rand_crop import rand_crop
-import random
+
+from typing import Tuple
+import functools
 
 def black_to_red_transparent(img_l):
-    # 1. 验证输入是 L 模式（按需求保证，但添加校验更健壮）
+    # 1. Validate input is in L mode (required by design, but validation adds robustness)
     if img_l.mode != 'L':
-        raise ValueError(f"输入图像必须是 L 模式，当前模式为：{img_l.mode}")
+        raise ValueError(f"Input image must be in L mode, current mode: {img_l.mode}")
     
-    # 2. 转为 NumPy 数组（shape=(高度, 宽度)，灰度值 0-255）
+    # 2. Convert to NumPy array (shape=(height, width), grayscale values 0-255)
     img_arr = cp.array(img_l, dtype=cp.uint8)
     height, width = img_arr.shape
     
-    # 3. 构建 RGBA 数组（shape=(高度, 宽度, 4)，4通道：R, G, B, Alpha）
-    # 初始化全透明（Alpha=0），RGB 通道默认0
+    # 3. Construct RGBA array (shape=(height, width, 4), 4 channels: R, G, B, Alpha)
+    # Initialize fully transparent (Alpha=0), RGB channels default to 0
     rgba_arr = cp.zeros((height, width, 4), dtype=cp.uint8)
     
-    # 4. 核心逻辑：黑色像素（>128）→ 红色（R=255, G=0, B=0）+ 不透明（Alpha=255）
-    # 生成黑色像素的掩码（True 表示是黑色像素）
+    # 4. Core logic: Black pixels (>128) → Red (R=255, G=0, B=0) + Opaque (Alpha=255)
+    # Generate mask for black pixels (True indicates black pixel)
     black_mask = img_arr < 128
     
-    # 给黑色像素赋值：R=255，Alpha=255（G和B保持0）
-    rgba_arr[black_mask, 0] = 255  # R通道：红色
-    rgba_arr[black_mask, 3] = 192  # Alpha通道：半透明（255=完全不透明，0=完全透明）
+    # Assign values to black pixels: R=255, Alpha=255 (G and B remain 0)
+    rgba_arr[black_mask, 0] = 255  # R channel: Red
+    rgba_arr[black_mask, 3] = 192  # Alpha channel: Semi-transparent (255=fully opaque, 0=fully transparent)
     
-    # 其他像素保持默认：RGB=0, Alpha=0（透明），无需额外处理
+    # Other pixels remain default: RGB=0, Alpha=0 (transparent), no additional processing needed
     
-    # 5. 转为 RGBA 模式的 Pillow Image 对象并返回
+    # 5. Convert to Pillow Image object in RGBA mode and return
     rgba_img = Image.fromarray(cp.asnumpy(rgba_arr), mode='RGBA')
     return rgba_img
 
 def fft_convolve_1d(vec1, vec2) -> cp.ndarray:
-    # 1. 验证输入是一维向量
+    # 1. Validate inputs are 1-dimensional vectors
     if vec1.ndim != 1 or vec2.ndim != 1:
-        raise ValueError("输入必须是一维 NumPy 向量")
+        raise ValueError("Inputs must be 1-dimensional NumPy vectors")
     
-    # 2. 计算需要的最小长度（避免循环卷积影响线性卷积结果）
+    # 2. Calculate minimum required length (avoid circular convolution affecting linear convolution results)
     len1 = len(vec1)
     len2 = len(vec2)
-    min_length = max(len1, len2) * 2 - 1  # 线性卷积的理论长度
+    min_length = max(len1, len2) * 2 - 1  # Theoretical length of linear convolution
     
-    # 3. 对两个向量做零填充（填充到最小长度，确保卷积结果完整）
+    # 3. Zero-padding for both vectors (pad to minimum length to ensure complete convolution results)
     vec1_padded = cp.pad(vec1, (0, min_length - len1), mode='constant')
     vec2_padded = cp.pad(vec2, (0, min_length - len2), mode='constant')
     
-    # 4. 核心步骤：FFT → 频域乘积 → 逆FFT
-    fft1 = cp.fft.fft(vec1_padded)  # 向量1的频域表示
-    fft2 = cp.fft.fft(vec2_padded)  # 向量2的频域表示
-    fft_product = fft1 * fft2       # 频域乘积（对应时域卷积）
-    conv_result = cp.fft.ifft(fft_product)  # 逆FFT还原时域
+    # 4. Core steps: FFT → Frequency domain product → IFFT
+    fft1 = cp.fft.fft(vec1_padded)  # Frequency domain representation of vector 1
+    fft2 = cp.fft.fft(vec2_padded)  # Frequency domain representation of vector 2
+    fft_product = fft1 * fft2       # Frequency domain product (corresponds to time domain convolution)
+    conv_result = cp.fft.ifft(fft_product)  # IFFT to restore time domain
     
-    # 5. 去除虚部误差（数值计算导致的微小虚部，实际卷积结果应为实数）
+    # 5. Remove imaginary part error (tiny imaginary components from numerical calculation; actual convolution should be real)
     conv_result = cp.real(conv_result)
     
     return conv_result
 
 __global_obj_image_cache = {}
 
-# 获取一个图片
+# Get an image
 def get_l_image(path_or_img:Image.Image|str):
     if isinstance(path_or_img, str):
-        # 避免多次重读
+        # Avoid repeated reading
         if __global_obj_image_cache.get(path_or_img) is None:
             img = Image.open(path_or_img).convert("L")
             __global_obj_image_cache[path_or_img] = img
@@ -92,11 +94,11 @@ def get_cp_image(FULL_IMAGE_INPUT:str|Image.Image):
         assert False
 
 def border_position(arr):
-    mask_ge05 = arr < 0.5 # 黑色像素
+    mask_ge05 = arr < 0.5 # Black pixels
     struct_element = cp.ones((5, 5), dtype=bool)
     mask_neighbor_ge05 = binary_dilation(mask_ge05, structure=struct_element, border_value=False)
-    mask_gt05 = arr >= 0.5 # 白色像素
-    final_mask = mask_gt05 & mask_neighbor_ge05 # 当前像素为白色且周围存在黑色像素
+    mask_gt05 = arr >= 0.5 # White pixels
+    final_mask = mask_gt05 & mask_neighbor_ge05 # Current pixel is white and black pixels exist in surrounding area
     result = final_mask.astype(cp.int32)
     return result
 
@@ -104,27 +106,27 @@ def find_match_pos_raw(FULL_IMAGE_INPUT: str|Image.Image, IMAGE_PART_INPUT: str|
     full_image_cp = get_cp_image(FULL_IMAGE_INPUT)
     part_image = get_l_image(IMAGE_PART_INPUT)
 
-    # 构建子图的 numpy 对象
+    # Construct numpy object for patch image
     timer.begin_timer("image to numpy: patch image:p3")
     part_image_cp = (cp.array(part_image) / 256).astype(cp.float64)
     border_part_cp = border_position(part_image_cp)
     timer.end_timer("image to numpy: patch image:p3")
 
-    # 预处理 X 向量
+    # Preprocess vector X
     timer.begin_timer("preprocessing vector X")
     X = cp.zeros(full_image_cp.shape)
-    X[full_image_cp <  0.5] = 1 # 内部: 1
-    X[full_image_cp >= 0.5] = 0 # 外部: 0
+    X[full_image_cp <  0.5] = 1 # Interior: 1
+    X[full_image_cp >= 0.5] = 0 # Exterior: 0
     timer.end_timer("preprocessing vector X")
 
-    # 预处理 Y 和 P 向量
+    # Preprocess vectors Y and P
     timer.begin_timer("preprocessing vector Y")
     Y = cp.zeros(part_image_cp.shape)
-    Y[part_image_cp  <  0.5] = 1 # 内部: 1
-    Y[part_image_cp  >= 0.5] = 0 # 外部: 0
+    Y[part_image_cp  <  0.5] = 1 # Interior: 1
+    Y[part_image_cp  >= 0.5] = 0 # Exterior: 0
     P = cp.zeros(part_image_cp.shape)
-    P[part_image_cp  <  0.5] = 1.0 # 内部权重: 1
-    P[border_part_cp >= 0.5] = 0.5 # 边界权重: 0.5
+    P[part_image_cp  <  0.5] = 1.0 # Interior weight: 1
+    P[border_part_cp >= 0.5] = 0.5 # Border weight: 0.5
     timer.end_timer("preprocessing vector Y")
 
     timer.begin_timer("match_nd")
@@ -145,18 +147,19 @@ def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> cp.ndarray:
     timer.end_timer("$find_match_pos")
     return posX, posY, score
 
-import rotate
-from tqdm import tqdm
-def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
+# Notes
+#   Black pixels are the actual pixels to be matched
+#   White pixels are blank background pixels
+def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> Tuple[int, int, float, float]:
     timer.begin_timer("$find_match_pos_and_rotate")
 
-    # 记录当前解（旋转角度）
+    # Record current solution (rotation angle)
     timer.ban_all_timer()
     rotate_now = 0.0
     posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
     timer.allow_all_timer()
 
-    # 记录最优解
+    # Record optimal solution
     rotate_best = rotate_now
     posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
@@ -187,23 +190,18 @@ def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT):
     timer.end_timer("$find_match_pos_and_rotate")
     return posX_best, posY_best, score_best, rotate_best
 
-if __name__ == "__main__":
-    DIRNOW = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(DIRNOW)
-
-    # 注意
-    #   黑色像素是被匹配的实体像素
-    #   白色像素是空白背景像素
-    FULL_IMAGE_INPUT = "all_data/data2/full_image.png"
-    IMAGE_PART_INPUT = rotate.rotate_and_crop_white_borders(rand_crop(get_l_image(FULL_IMAGE_INPUT)), None, random.random() * 360)
-
-    get_cp_image(FULL_IMAGE_INPUT)
-    posY, posX, score, rot_deg = find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
-    print(score)
-
-    # 红色的掩码图像
+# Red mask image
+def get_red_mask_image(FULL_IMAGE_INPUT:str|Image.Image, IMAGE_PART_INPUT:str|Image.Image, posY:int, posX:int, rot_deg:float):
     red_mask = black_to_red_transparent(
         rotate.rotate_and_crop_white_borders(get_l_image(IMAGE_PART_INPUT), None, rot_deg))
     ans_image = get_l_image(FULL_IMAGE_INPUT).convert("RGBA").copy()
     ans_image.paste(red_mask, (int(posY), int(posX)), mask=red_mask)
-    ans_image.show()
+    return ans_image
+
+def get_rotated_and_moved_image(full_image_size: Tuple[int, int]|str, IMAGE_PART_INPUT:str|Image.Image, posY:int, posX:int, rot_deg:float):
+    if isinstance(full_image_size, str):
+        full_image_size = get_l_image(full_image_size).size
+    rotated_image = rotate.rotate_and_crop_white_borders(get_l_image(IMAGE_PART_INPUT), None, rot_deg)
+    ans_image = Image.new("L", full_image_size, "white")
+    ans_image.paste(rotated_image, (int(posY), int(posX)))
+    return ans_image
