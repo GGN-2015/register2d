@@ -1,5 +1,5 @@
 from . import rotate
-from . import timer
+import rawtimer
 
 from tqdm import tqdm
 from PIL import Image
@@ -107,87 +107,82 @@ def find_match_pos_raw(FULL_IMAGE_INPUT: str|Image.Image, IMAGE_PART_INPUT: str|
     part_image = get_l_image(IMAGE_PART_INPUT)
 
     # Construct numpy object for patch image
-    timer.begin_timer("image to numpy: patch image:p3")
+    rawtimer.begin_timer("image to numpy: patch image:p3")
     part_image_cp = (cp.array(part_image) / 256).astype(cp.float64)
     border_part_cp = border_position(part_image_cp)
-    timer.end_timer("image to numpy: patch image:p3")
+    rawtimer.end_timer("image to numpy: patch image:p3")
 
     # Preprocess vector X
-    timer.begin_timer("preprocessing vector X")
+    rawtimer.begin_timer("preprocessing vector X")
     X = cp.zeros(full_image_cp.shape)
     X[full_image_cp <  0.5] = 1 # Interior: 1
     X[full_image_cp >= 0.5] = 0 # Exterior: 0
-    timer.end_timer("preprocessing vector X")
+    rawtimer.end_timer("preprocessing vector X")
 
     # Preprocess vectors Y and P
-    timer.begin_timer("preprocessing vector Y")
+    rawtimer.begin_timer("preprocessing vector Y")
     Y = cp.zeros(part_image_cp.shape)
     Y[part_image_cp  <  0.5] = 1 # Interior: 1
     Y[part_image_cp  >= 0.5] = 0 # Exterior: 0
     P = cp.zeros(part_image_cp.shape)
     P[part_image_cp  <  0.5] = 1.0 # Interior weight: 1
     P[border_part_cp >= 0.5] = 0.5 # Border weight: 0.5
-    timer.end_timer("preprocessing vector Y")
+    rawtimer.end_timer("preprocessing vector Y")
 
-    timer.begin_timer("match_nd")
+    rawtimer.begin_timer("match_nd")
     ANS = match_arr(X, Y, P)
-    timer.end_timer("match_nd")
+    rawtimer.end_timer("match_nd")
 
-    timer.begin_timer("sorting solution:p1")
+    rawtimer.begin_timer("sorting solution:p1")
     pos = cp.argmin(ANS)
     posX, posY = cp.unravel_index(pos, ANS.shape)
-    timer.end_timer("sorting solution:p1")
+    rawtimer.end_timer("sorting solution:p1")
 
     return [(posY, posX, ANS[posX, posY] / cp.sum(P))]
 
 def find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> cp.ndarray:
-    timer.begin_timer("$find_match_pos")
+    rawtimer.begin_timer("$find_match_pos")
     p1list = find_match_pos_raw(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
     posX, posY, score = p1list[0]
-    timer.end_timer("$find_match_pos")
+    rawtimer.end_timer("$find_match_pos")
     return posX, posY, score
 
 # Notes
 #   Black pixels are the actual pixels to be matched
 #   White pixels are blank background pixels
 def find_match_pos_and_rotate(FULL_IMAGE_INPUT, IMAGE_PART_INPUT) -> Tuple[int, int, float, float]:
-    timer.begin_timer("$find_match_pos_and_rotate")
+    rawtimer.begin_timer("$find_match_pos_and_rotate")
 
-    # Record current solution (rotation angle)
-    timer.ban_all_timer()
-    rotate_now = 0.0
-    posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
-    timer.allow_all_timer()
+    with rawtimer.timer_silent():
+        # Record current solution (rotation angle)
+        rotate_now = 0.0
+        posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, IMAGE_PART_INPUT)
 
-    # Record optimal solution
-    rotate_best = rotate_now
-    posX_best, posY_best, score_best = posX_now, posY_now, score_now
+        # Record optimal solution
+        rotate_best = rotate_now
+        posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
-    for i in tqdm(range(4, 360, 4)):
-        rotate_now = i
-        timer.ban_all_timer()
-        posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, 
-            rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_now))
-        timer.allow_all_timer()
-        
-        if score_now < score_best:
-            rotate_best = rotate_now
-            posX_best, posY_best, score_best = posX_now, posY_now, score_now
+        for i in tqdm(range(4, 360, 4)):
+            rotate_now = i
+            posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, 
+                rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_now))
+            
+            if score_now < score_best:
+                rotate_best = rotate_now
+                posX_best, posY_best, score_best = posX_now, posY_now, score_now
 
-    rotate_base = rotate_best
-    for i in tqdm(range(-20, 20, 3)):
-        rotate_now = rotate_base + i / 10
+        rotate_base = rotate_best
+        for i in tqdm(range(-20, 20, 3)):
+            rotate_now = rotate_base + i / 10
 
-        timer.ban_all_timer()
-        posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, 
-            rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_now))
-        timer.allow_all_timer()
-        
-        if score_now < score_best:
-            rotate_best = rotate_now
-            posX_best, posY_best, score_best = posX_now, posY_now, score_now
+            posX_now, posY_now, score_now = find_match_pos(FULL_IMAGE_INPUT, 
+                rotate.rotate_and_crop_white_borders(IMAGE_PART_INPUT, None, rotate_now))
+            
+            if score_now < score_best:
+                rotate_best = rotate_now
+                posX_best, posY_best, score_best = posX_now, posY_now, score_now
     
-    timer.end_timer("$find_match_pos_and_rotate")
+    rawtimer.end_timer("$find_match_pos_and_rotate")
     return posX_best, posY_best, score_best, rotate_best
 
 # Red mask image
