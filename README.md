@@ -1,6 +1,8 @@
 # register2d
 Given a black-and-white binary image A and another smaller black-and-white binary image B, perform translation and rotation on B, and find the position in A that is closest to the transformed B. A and B should be saved in grey PNG image (mode='L').
 
+GitHub repo: [https://github.com/GGN-2015/register2d](https://github.com/GGN-2015/register2d)
+
 ## Installation
 ```bash
 pip install register2d
